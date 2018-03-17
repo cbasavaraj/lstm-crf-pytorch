@@ -36,9 +36,9 @@ class lstm_crf(nn.Module):
         y, lens = self.lstm(x)
         mask = x.data.gt(0).float()
         y = y * Var(mask.unsqueeze(-1).expand_as(y))
-        Z = self.crf.forward(y, mask)
         score = self.crf.score(y, y0, mask)
-        return Z - score # negative log likelihood
+        Z = self.crf.forward(y, mask)
+        return -(score - Z) # negative log likelihood
 
     def decode(self, x): # for prediction
         result = []
@@ -50,6 +50,75 @@ class lstm_crf(nn.Module):
                 best_path = []
             result.append(best_path)
         return result
+
+class crf(nn.Module):
+    def __init__(self, num_tags):
+        super().__init__()
+        self.num_tags = num_tags
+
+        # matrix of transition scores to i from j
+        self.trans = nn.Parameter(randn(num_tags, num_tags))
+        self.trans.data[SOS_IDX, :] = -10000. # no transition to SOS
+        self.trans.data[:, EOS_IDX] = -10000. # no transition from EOS except to PAD
+        self.trans.data[:, PAD_IDX] = -10000. # no transition from PAD except to PAD
+        self.trans.data[PAD_IDX, :] = -10000. # no transition to PAD except from EOS
+        self.trans.data[PAD_IDX, EOS_IDX] = 0.
+        self.trans.data[PAD_IDX, PAD_IDX] = 0.
+
+    def forward(self, y, mask): # partition function
+        # initialize forward variables in log space
+        score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.)
+        score[:, SOS_IDX] = 0.
+        score = Var(score)
+        for t in range(y.size(1)): # iterate through the sequence
+            mask_t = Var(mask[:, t].unsqueeze(-1).expand_as(score))
+            score_t = score.unsqueeze(1).expand(-1, *self.trans.size())
+            emit = y[:, t].unsqueeze(-1).expand_as(score_t)
+            trans = self.trans.unsqueeze(0).expand_as(score_t)
+            score_t = log_sum_exp(score_t + emit + trans)
+            score = score_t * mask_t + score * (1 - mask_t)
+        score = log_sum_exp(score)
+        return score
+
+    def score(self, y, y0, mask): # numerator
+        score = Var(Tensor(BATCH_SIZE).fill_(0.))
+        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1)
+        for t in range(y.size(1)): # iterate through the sequence
+            mask_t = Var(mask[:, t])
+            emit = torch.cat([y[i, t, y0[i, t + 1]] for i in range(BATCH_SIZE)])
+            trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
+            score = score + emit + trans
+        return score
+
+    def decode(self, y): # Viterbi decoding
+        # initialize backpointers (psi) and 
+        # viterbi variables (delta) in log space
+        bptr = []
+        score = Tensor(self.num_tags).fill_(-10000.)
+        score[SOS_IDX] = 0.
+        score = Var(score)
+
+        for t in range(len(y)): # iterate through the sequence
+            # backpointers and viterbi variables at this timestep
+            bptr_t = []
+            score_t = []
+            for i in range(self.num_tags): # for each next tag
+                z = score + self.trans[i]
+                best_tag = argmax(z) # find the best previous tag
+                bptr_t.append(best_tag)
+                score_t.append(z[best_tag])
+            bptr.append(bptr_t)
+            score = torch.cat(score_t) + y[t]
+        best_tag = argmax(score)
+        best_score = score[best_tag]
+
+        # back-tracking
+        best_path = [best_tag]
+        for bptr_t in reversed(bptr):
+            best_path.append(bptr_t[best_tag])
+        best_path = reversed(best_path[:-1])
+
+        return best_path
 
 class lstm(nn.Module):
     def __init__(self, vocab_size, num_tags):
@@ -85,74 +154,6 @@ class lstm(nn.Module):
         y = self.out(y)
         # y = y.view(BATCH_SIZE, -1, self.num_tags) # Python 2
         return y, self.lens
-
-class crf(nn.Module):
-    def __init__(self, num_tags):
-        super().__init__()
-        self.num_tags = num_tags
-
-        # matrix of transition scores from j to i
-        self.trans = nn.Parameter(randn(num_tags, num_tags))
-        self.trans.data[SOS_IDX, :] = -10000. # no transition to SOS
-        self.trans.data[:, EOS_IDX] = -10000. # no transition from EOS except to PAD
-        self.trans.data[:, PAD_IDX] = -10000. # no transition from PAD except to PAD
-        self.trans.data[PAD_IDX, :] = -10000. # no transition to PAD except from EOS
-        self.trans.data[PAD_IDX, EOS_IDX] = 0.
-        self.trans.data[PAD_IDX, PAD_IDX] = 0.
-
-    def forward(self, y, mask): # forward algorithm
-        # initialize forward variables in log space
-        score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.)
-        score[:, SOS_IDX] = 0.
-        score = Var(score)
-        for t in range(y.size(1)): # iterate through the sequence
-            mask_t = Var(mask[:, t].unsqueeze(-1).expand_as(score))
-            score_t = score.unsqueeze(1).expand(-1, *self.trans.size())
-            emit = y[:, t].unsqueeze(-1).expand_as(score_t)
-            trans = self.trans.unsqueeze(0).expand_as(score_t)
-            score_t = log_sum_exp(score_t + emit + trans)
-            score = score_t * mask_t + score * (1 - mask_t)
-        score = log_sum_exp(score)
-        return score # partition function
-
-    def score(self, y, y0, mask): # calculate the score of a given sequence
-        score = Var(Tensor(BATCH_SIZE).fill_(0.))
-        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1)
-        for t in range(y.size(1)): # iterate through the sequence
-            mask_t = Var(mask[:, t])
-            emit = torch.cat([y[b, t, y0[b, t + 1]] for b in range(BATCH_SIZE)])
-            trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
-            score = score + emit + trans
-        return score
-
-    def decode(self, y): # Viterbi decoding
-        # initialize backpointers and viterbi variables in log space
-        bptr = []
-        score = Tensor(self.num_tags).fill_(-10000.)
-        score[SOS_IDX] = 0.
-        score = Var(score)
-
-        for t in range(len(y)): # iterate through the sequence
-            # backpointers and viterbi variables at this timestep
-            bptr_t = []
-            score_t = []
-            for i in range(self.num_tags): # for each next tag
-                z = score + self.trans[i]
-                best_tag = argmax(z) # find the best previous tag
-                bptr_t.append(best_tag)
-                score_t.append(z[best_tag])
-            bptr.append(bptr_t)
-            score = torch.cat(score_t) + y[t]
-        best_tag = argmax(score)
-        best_score = score[best_tag]
-
-        # back-tracking
-        best_path = [best_tag]
-        for bptr_t in reversed(bptr):
-            best_path.append(bptr_t[best_tag])
-        best_path = reversed(best_path[:-1])
-
-        return best_path
 
 def Tensor(*args):
     x = torch.Tensor(*args)
