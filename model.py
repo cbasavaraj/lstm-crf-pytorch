@@ -36,11 +36,11 @@ class lstm_crf(nn.Module):
         self.crf = crf(num_tags)
 
     def forward(self, x, y0): # training
-        y, lens = self.lstm(x)
-        mask = x.data.gt(0).float()
+        y, lens = self.lstm(x) # [n, T, K]
+        mask = x.data.gt(0).float() # [n, T]
         y = y * Var(mask.unsqueeze(-1).expand_as(y))
-        score = self.crf.score(y, y0, mask)
-        Z = self.crf.forward(y, mask)
+        score = self.crf.score(y, y0, mask) # [n]
+        Z = self.crf.forward(y, mask) # [n]
         return -(score - Z) # negative log likelihood
 
     def decode(self, x): # prediction
@@ -69,36 +69,37 @@ class crf(nn.Module):
         self.trans.data[PAD_IDX, PAD_IDX] = 0.
 
     def score(self, y, y0, mask): # numerator
+        # for predicted tags and current transition matrix
         score = Var(Tensor(BATCH_SIZE).fill_(0.))
-        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1)
+        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1) # [n, 1+T]
         for t in range(y.size(1)): # iterate through the sequence
             mask_t = Var(mask[:, t])
             emit = torch.cat([y[i, t, y0[i, t + 1]] for i in range(BATCH_SIZE)])
             trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
-            score = score + emit + trans
+            score = score + emit + trans # [n]
         return score
 
-    # ?? over all s: don't get this fully
     def forward(self, y, mask): # partition function Z
+        # over all possible emissions and transitions
         # initialize forward variables in log space
-        score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.)
+        score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.) # [n, K]
         score[:, SOS_IDX] = 0.
         score = Var(score)
         for t in range(y.size(1)): # iterate through the sequence
-            mask_t = Var(mask[:, t].unsqueeze(-1).expand_as(score))
-            score_t = score.unsqueeze(1).expand(-1, *self.trans.size())
-            emit = y[:, t].unsqueeze(-1).expand_as(score_t)
-            trans = self.trans.unsqueeze(0).expand_as(score_t)
-            score_t = log_sum_exp(score_t + emit + trans)
-            score = score_t * mask_t + score * (1 - mask_t)
-        score = log_sum_exp(score)
+            mask_t = Var(mask[:, t].unsqueeze(-1).expand_as(score)) # [n] -> [n, K]
+            score_t = score.unsqueeze(1).expand(-1, *self.trans.size()) # [n, K] -> [n, K, K]
+            emit = y[:, t].unsqueeze(-1).expand_as(score_t) # [n, K] -> [n, K, K]
+            trans = self.trans.unsqueeze(0).expand_as(score_t) # [K, K] -> [n, K, K]
+            score_t = log_sum_exp(score_t + emit + trans) # [n, K]
+            score = score_t * mask_t + score * (1 - mask_t) # [n, K]
+        score = log_sum_exp(score) # [n]
         return score
 
     def decode(self, y): # Viterbi decoding
         # initialize backpointers (psi: bptr) and 
         # viterbi variables (delta: score) in log space
         bptr = []
-        score = Tensor(self.num_tags).fill_(-10000.)
+        score = Tensor(self.num_tags).fill_(-10000.) # [K]
         score[SOS_IDX] = 0.
         score = Var(score)
 
@@ -117,11 +118,11 @@ class crf(nn.Module):
         best_tag = argmax(score)
         best_score = score[best_tag]
 
-        # back-tracking
-        # ?? best_tag should change every time
+        # back-tracking thru btpr: [T, K]
         best_path = [best_tag]
         for bptr_t in reversed(bptr):
-            best_path.append(bptr_t[best_tag])
+            best_tag = bptr_t[best_tag]
+            best_path.append(best_tag)
         best_path = reversed(best_path[:-1])
 
         return best_path
@@ -151,11 +152,11 @@ class lstm(nn.Module):
     def forward(self, x):
         self.hidden = self.init_hidden()
         self.lens = [len_unpadded(seq) for seq in x]
-        embed = self.embed(x)
+        embed = self.embed(x) # [n, T, E]
         embed = nn.utils.rnn.pack_padded_sequence(embed, self.lens, batch_first=True)
-        y, _ = self.lstm(embed, self.hidden)
-        y, _ = nn.utils.rnn.pad_packed_sequence(y, batch_first=True)
-        y = self.out(y)
+        hiddens, _ = self.lstm(embed, self.hidden) # [n, T, H]
+        hiddens, _ = nn.utils.rnn.pad_packed_sequence(hiddens, batch_first=True)
+        y = self.out(hiddens) # [n, T, K]
         return y, self.lens
 
 def Tensor(*args):

@@ -47,13 +47,13 @@ def train():
     if CUDA:
         model = model.cuda()
     print(model)
-    optim = torch.optim.SGD(model.parameters(), lr = LEARNING_RATE, weight_decay = WEIGHT_DECAY)
+    optim = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     if len(sys.argv) == 6 and isfile(sys.argv[5]):
         epoch = load_checkpoint(sys.argv[5], model)
         filename = re.sub("\.epoch[0-9]+$", "", sys.argv[5])
     else:
         epoch = 0
-        filename = "model.ckpt"
+        filename = "model"
     print("training model...")
     for i in range(epoch + 1, epoch + num_epochs + 1):
         loss_epoch = 0

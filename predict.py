@@ -47,15 +47,13 @@ def predict():
         if len(data) == BATCH_SIZE:
             results = run_model(model, idx_to_tag, data)
             for result in results:
-                print(result[0])
-                print(result[1])
+                print([(word, tag) for word, tag in zip(result[0], result[1])])
             data = []
     fo.close()
     if len(data):
         results = run_model(model, idx_to_tag, data)
         for result in results:
-            print(result[0])
-            print(result[1])
+            print([(word, tag) for word, tag in zip(result[0], result[1])])
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
