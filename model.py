@@ -59,7 +59,7 @@ class crf(nn.Module):
         super().__init__()
         self.num_tags = num_tags
 
-        # matrix of transition scores from j to i 
+        # matrix of transition scores to i from j
         self.trans = nn.Parameter(randn(num_tags, num_tags))
         self.trans.data[SOS_IDX, :] = -10000. # no transition to SOS
         self.trans.data[:, EOS_IDX] = -10000. # no transition from EOS except to PAD
@@ -68,7 +68,7 @@ class crf(nn.Module):
         self.trans.data[PAD_IDX, EOS_IDX] = 0.
         self.trans.data[PAD_IDX, PAD_IDX] = 0.
 
-    def score(self, y, y0, mask): # numerator
+    def score(self, y, y0, mask): # numerator / first term
         # for predicted tags and current transition matrix
         score = Var(Tensor(BATCH_SIZE).fill_(0.))
         y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1) # [n, 1+T]
@@ -79,9 +79,10 @@ class crf(nn.Module):
             score = score + emit + trans # [n]
         return score
 
-    def forward(self, y, mask): # partition function Z
-        # over all possible emissions and transitions
-        # initialize forward variables in log space
+    def forward(self, y, mask): # partition function Z / second term
+        # over all possible tags and transitions
+        # initialize forward variables (alpha: score) in log space
+        # (clearer to add emit after first log_sum_exp)
         score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.) # [n, K]
         score[:, SOS_IDX] = 0.
         score = Var(score)
