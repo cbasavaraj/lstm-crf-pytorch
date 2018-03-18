@@ -96,7 +96,7 @@ class crf(nn.Module):
         score = log_sum_exp(score) # [n]
         return score
 
-    def decode(self, y): # Viterbi decoding
+    def decode_loopy(self, y): # Viterbi decoding
         # initialize backpointers (psi: bptr) and 
         # viterbi variables (delta: score) in log space
         bptr = []
@@ -108,7 +108,6 @@ class crf(nn.Module):
             # backpointers and viterbi variables at this timestep
             bptr_t = []
             score_t = []
-            # !!: eliminate loop
             for j in range(self.num_tags): # for current tag
                 z = score + self.trans[j]
                 best_tag_prev = argmax(z) # find the best previous tag
@@ -124,7 +123,32 @@ class crf(nn.Module):
         for bptr_t in reversed(bptr):
             best_tag = bptr_t[best_tag]
             best_path.append(best_tag)
-        best_path = reversed(best_path[:-1])
+        best_path = reversed(best_path[:-1]) # skip EOS
+
+        return best_path
+
+    def decode(self, y): # Viterbi decoding
+        # initialize viterbi variables (delta: score) 
+        # in log space, along with backpointers (psi: bptr)
+        score = Tensor(self.num_tags).fill_(-10000.) # [K]
+        score[SOS_IDX] = 0.
+        score = Var(score)
+        bptr = []
+
+        for t in range(len(y)): # iterate through the sequence
+            z = score.unsqueeze(-1).expand_as(self.trans) + self.trans.t() # [K, K]
+            score_t, bptr_t = torch.max(z, 0) # [K], [K]
+            score = score_t + y[t] # [K]
+            bptr.append(bptr_t.data.tolist())
+        best_tag = argmax(score) # for EOS
+        best_score = score[best_tag] # for seq
+
+        # back-tracking thru btpr: [T, K]
+        best_path = [best_tag]
+        for bptr_t in reversed(bptr):
+            best_tag = bptr_t[best_tag]
+            best_path.append(best_tag)
+        best_path = reversed(best_path[:-1]) # skip EOS
 
         return best_path
 
