@@ -1,9 +1,11 @@
 import sys
 import re
 import time
+
+from os.path import isfile
+
 from model import *
 from utils import *
-from os.path import isfile
 
 def load_data():
     data = []

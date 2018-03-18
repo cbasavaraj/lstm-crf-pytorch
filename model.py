@@ -32,7 +32,7 @@ class lstm_crf(nn.Module):
         self.lstm = lstm(vocab_size, num_tags)
         self.crf = crf(num_tags)
 
-    def forward(self, x, y0): # for training
+    def forward(self, x, y0): # training
         y, lens = self.lstm(x)
         mask = x.data.gt(0).float()
         y = y * Var(mask.unsqueeze(-1).expand_as(y))
@@ -40,7 +40,7 @@ class lstm_crf(nn.Module):
         Z = self.crf.forward(y, mask)
         return -(score - Z) # negative log likelihood
 
-    def decode(self, x): # for prediction
+    def decode(self, x): # prediction
         result = []
         y, lens = self.lstm(x)
         for i in range(len(lens)):
@@ -56,7 +56,7 @@ class crf(nn.Module):
         super().__init__()
         self.num_tags = num_tags
 
-        # matrix of transition scores to i from j
+        # matrix of transition scores from j to i 
         self.trans = nn.Parameter(randn(num_tags, num_tags))
         self.trans.data[SOS_IDX, :] = -10000. # no transition to SOS
         self.trans.data[:, EOS_IDX] = -10000. # no transition from EOS except to PAD
@@ -65,7 +65,18 @@ class crf(nn.Module):
         self.trans.data[PAD_IDX, EOS_IDX] = 0.
         self.trans.data[PAD_IDX, PAD_IDX] = 0.
 
-    def forward(self, y, mask): # partition function
+    def score(self, y, y0, mask): # numerator
+        score = Var(Tensor(BATCH_SIZE).fill_(0.))
+        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1)
+        for t in range(y.size(1)): # iterate through the sequence
+            mask_t = Var(mask[:, t])
+            emit = torch.cat([y[i, t, y0[i, t + 1]] for i in range(BATCH_SIZE)])
+            trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
+            score = score + emit + trans
+        return score
+
+    # ?? over all s: don't get this fully
+    def forward(self, y, mask): # partition function Z
         # initialize forward variables in log space
         score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.)
         score[:, SOS_IDX] = 0.
@@ -80,19 +91,9 @@ class crf(nn.Module):
         score = log_sum_exp(score)
         return score
 
-    def score(self, y, y0, mask): # numerator
-        score = Var(Tensor(BATCH_SIZE).fill_(0.))
-        y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1)
-        for t in range(y.size(1)): # iterate through the sequence
-            mask_t = Var(mask[:, t])
-            emit = torch.cat([y[i, t, y0[i, t + 1]] for i in range(BATCH_SIZE)])
-            trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
-            score = score + emit + trans
-        return score
-
     def decode(self, y): # Viterbi decoding
-        # initialize backpointers (psi) and 
-        # viterbi variables (delta) in log space
+        # initialize backpointers (psi: bptr) and 
+        # viterbi variables (delta: score) in log space
         bptr = []
         score = Tensor(self.num_tags).fill_(-10000.)
         score[SOS_IDX] = 0.
@@ -102,8 +103,9 @@ class crf(nn.Module):
             # backpointers and viterbi variables at this timestep
             bptr_t = []
             score_t = []
-            for i in range(self.num_tags): # for each next tag
-                z = score + self.trans[i]
+            # !!: eliminate loop
+            for j in range(self.num_tags): # for each next tag
+                z = score + self.trans[j]
                 best_tag = argmax(z) # find the best previous tag
                 bptr_t.append(best_tag)
                 score_t.append(z[best_tag])
@@ -113,6 +115,7 @@ class crf(nn.Module):
         best_score = score[best_tag]
 
         # back-tracking
+        # ?? best_tag should change every time
         best_path = [best_tag]
         for bptr_t in reversed(bptr):
             best_path.append(bptr_t[best_tag])
@@ -126,7 +129,7 @@ class lstm(nn.Module):
         # self.num_tags = num_tags # Python 2
 
         # architecture
-        self.embed = nn.Embedding(vocab_size, EMBED_SIZE, padding_idx = PAD_IDX)
+        self.embed = nn.Embedding(vocab_size, EMBED_SIZE, padding_idx=PAD_IDX)
         self.lstm = nn.LSTM(
             input_size = EMBED_SIZE,
             hidden_size = HIDDEN_SIZE // NUM_DIRS,
@@ -147,9 +150,9 @@ class lstm(nn.Module):
         self.hidden = self.init_hidden()
         self.lens = [len_unpadded(seq) for seq in x]
         embed = self.embed(x)
-        embed = nn.utils.rnn.pack_padded_sequence(embed, self.lens, batch_first = True)
+        embed = nn.utils.rnn.pack_padded_sequence(embed, self.lens, batch_first=True)
         y, _ = self.lstm(embed, self.hidden)
-        y, _ = nn.utils.rnn.pad_packed_sequence(y, batch_first = True)
+        y, _ = nn.utils.rnn.pad_packed_sequence(y, batch_first=True)
         # y = y.contiguous().view(-1, HIDDEN_SIZE) # Python 2
         y = self.out(y)
         # y = y.view(BATCH_SIZE, -1, self.num_tags) # Python 2
@@ -172,7 +175,7 @@ def zeros(*args):
     return x.cuda() if CUDA else x
 
 def len_unpadded(x): # get unpadded sequence length
-    return next((i for i, j in enumerate(x) if scalar(j) == 0), len(x))
+    return next((i for i, w in enumerate(x) if scalar(w) == 0), len(x))
 
 def scalar(x):
     return x.view(-1).data.tolist()[0]
