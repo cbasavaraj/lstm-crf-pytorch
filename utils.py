@@ -9,7 +9,7 @@ def normalize(s):
 def load_tag_to_idx(filename):
     print("loading tag_to_idx...")
     tag_to_idx = {}
-    fo = open(filename)
+    fo = open(DATA_PATH + filename)
     for line in fo:
         line = line.strip()
         tag_to_idx[line] = len(tag_to_idx)
@@ -19,7 +19,7 @@ def load_tag_to_idx(filename):
 def load_word_to_idx(filename):
     print("loading word_to_idx...")
     word_to_idx = {}
-    fo = open(filename)
+    fo = open(DATA_PATH + filename)
     for line in fo:
         line = line.strip()
         word_to_idx[line] = len(word_to_idx)

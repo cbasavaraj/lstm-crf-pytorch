@@ -7,6 +7,8 @@ from os.path import isfile
 from model import *
 from utils import *
 
+DATA_PATH = "./data/"
+
 def load_data():
     data = []
     batch_x = []
@@ -15,7 +17,7 @@ def load_data():
     print("loading data...")
     word_to_idx = load_word_to_idx(sys.argv[2])
     tag_to_idx = load_tag_to_idx(sys.argv[3])
-    fo = open(sys.argv[4], "r")
+    fo = open(DATA_PATH + sys.argv[4], "r")
     for line in fo:
         line = line.strip()
         words = [int(i) for i in line.split(" ")]
