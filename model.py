@@ -72,7 +72,7 @@ class crf(nn.Module):
         # for predicted tags and current transition matrix
         score = Var(Tensor(BATCH_SIZE).fill_(0.))
         y0 = torch.cat([LongTensor(BATCH_SIZE, 1).fill_(SOS_IDX), y0], 1) # [n, 1+T]
-        for t in range(y.size(1)): # iterate through the sequence
+        for t in range(y.size(1)): # iterate through sequence
             mask_t = Var(mask[:, t])
             emit = torch.cat([y[i, t, y0[i, t + 1]] for i in range(BATCH_SIZE)])
             trans = torch.cat([self.trans[seq[t + 1], seq[t]] for seq in y0]) * mask_t
@@ -82,11 +82,11 @@ class crf(nn.Module):
     def forward(self, y, mask): # partition function Z / second term
         # over all possible tags and transitions
         # initialize forward variables (alpha: score) in log space
-        # (clearer to add emit after first log_sum_exp)
+        # (would be clearer to add emit after first log_sum_exp)
         score = Tensor(BATCH_SIZE, self.num_tags).fill_(-10000.) # [n, K]
         score[:, SOS_IDX] = 0.
         score = Var(score)
-        for t in range(y.size(1)): # iterate through the sequence
+        for t in range(y.size(1)): # iterate through sequence
             mask_t = Var(mask[:, t].unsqueeze(-1).expand_as(score)) # [n] -> [n, K]
             score_t = score.unsqueeze(1).expand(-1, *self.trans.size()) # [n, K] -> [n, K, K]
             emit = y[:, t].unsqueeze(-1).expand_as(score_t) # [n, K] -> [n, K, K]
@@ -96,37 +96,6 @@ class crf(nn.Module):
         score = log_sum_exp(score) # [n]
         return score
 
-    def decode_loopy(self, y): # Viterbi decoding
-        # initialize backpointers (psi: bptr) and 
-        # viterbi variables (delta: score) in log space
-        bptr = []
-        score = Tensor(self.num_tags).fill_(-10000.) # [K]
-        score[SOS_IDX] = 0.
-        score = Var(score)
-
-        for t in range(len(y)): # iterate through the sequence
-            # backpointers and viterbi variables at this timestep
-            bptr_t = []
-            score_t = []
-            for j in range(self.num_tags): # for current tag
-                z = score + self.trans[j]
-                best_tag_prev = argmax(z) # find the best previous tag
-                bptr_t.append(best_tag_prev)
-                score_t.append(z[best_tag_prev])
-            bptr.append(bptr_t)
-            score = torch.cat(score_t) + y[t]
-        best_tag = argmax(score) # for EOS
-        best_score = score[best_tag]
-
-        # back-tracking thru btpr: [T, K]
-        best_path = [best_tag]
-        for bptr_t in reversed(bptr):
-            best_tag = bptr_t[best_tag]
-            best_path.append(best_tag)
-        best_path = reversed(best_path[:-1]) # skip EOS
-
-        return best_path
-
     def decode(self, y): # Viterbi decoding
         # initialize viterbi variables (delta: score) 
         # in log space, along with backpointers (psi: bptr)
@@ -135,9 +104,9 @@ class crf(nn.Module):
         score = Var(score)
         bptr = []
 
-        for t in range(len(y)): # iterate through the sequence
-            z = score.unsqueeze(-1).expand_as(self.trans) + self.trans.t() # [K, K]
-            score_t, bptr_t = torch.max(z, 0) # [K], [K]
+        for t in range(len(y)): # iterate through sequence
+            z = score.unsqueeze(0).expand_as(self.trans) + self.trans # [K, K]
+            score_t, bptr_t = torch.max(z, 1) # max over prev tags: [K], [K]
             score = score_t + y[t] # [K]
             bptr.append(bptr_t.data.tolist())
         best_tag = argmax(score) # for EOS
