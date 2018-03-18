@@ -109,14 +109,14 @@ class crf(nn.Module):
             bptr_t = []
             score_t = []
             # !!: eliminate loop
-            for j in range(self.num_tags): # for each next tag
+            for j in range(self.num_tags): # for current tag
                 z = score + self.trans[j]
-                best_tag = argmax(z) # find the best previous tag
-                bptr_t.append(best_tag)
-                score_t.append(z[best_tag])
+                best_tag_prev = argmax(z) # find the best previous tag
+                bptr_t.append(best_tag_prev)
+                score_t.append(z[best_tag_prev])
             bptr.append(bptr_t)
             score = torch.cat(score_t) + y[t]
-        best_tag = argmax(score)
+        best_tag = argmax(score) # for EOS
         best_score = score[best_tag]
 
         # back-tracking thru btpr: [T, K]
