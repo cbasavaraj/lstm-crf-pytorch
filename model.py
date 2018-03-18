@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable as Var
 
-BATCH_SIZE = 64
+BATCH_SIZE = 2 # 64
+
 EMBED_SIZE = 50
 HIDDEN_SIZE = 300
 NUM_LAYERS = 2
@@ -11,7 +12,9 @@ BIDIRECTIONAL = True
 NUM_DIRS = 2 if BIDIRECTIONAL else 1
 LEARNING_RATE = 0.01
 WEIGHT_DECAY = 1e-4
-SAVE_EVERY = 10
+
+LOG_EVERY  = 10
+SAVE_EVERY = 100
 
 PAD = "<PAD>" # padding
 EOS = "<EOS>" # end of sequence
@@ -126,7 +129,6 @@ class crf(nn.Module):
 class lstm(nn.Module):
     def __init__(self, vocab_size, num_tags):
         super().__init__()
-        # self.num_tags = num_tags # Python 2
 
         # architecture
         self.embed = nn.Embedding(vocab_size, EMBED_SIZE, padding_idx=PAD_IDX)
@@ -153,9 +155,7 @@ class lstm(nn.Module):
         embed = nn.utils.rnn.pack_padded_sequence(embed, self.lens, batch_first=True)
         y, _ = self.lstm(embed, self.hidden)
         y, _ = nn.utils.rnn.pad_packed_sequence(y, batch_first=True)
-        # y = y.contiguous().view(-1, HIDDEN_SIZE) # Python 2
         y = self.out(y)
-        # y = y.view(BATCH_SIZE, -1, self.num_tags) # Python 2
         return y, self.lens
 
 def Tensor(*args):

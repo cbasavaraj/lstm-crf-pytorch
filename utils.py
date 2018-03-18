@@ -9,21 +9,23 @@ def normalize(s):
 def load_tag_to_idx(filename):
     print("loading tag_to_idx...")
     tag_to_idx = {}
-    fo = open(DATA_PATH + filename)
+    fo = open(filename)
     for line in fo:
         line = line.strip()
         tag_to_idx[line] = len(tag_to_idx)
     fo.close()
+    print("size of tag_to_idx: %d" % len(tag_to_idx))
     return tag_to_idx
 
 def load_word_to_idx(filename):
     print("loading word_to_idx...")
     word_to_idx = {}
-    fo = open(DATA_PATH + filename)
+    fo = open(filename)
     for line in fo:
         line = line.strip()
         word_to_idx[line] = len(word_to_idx)
     fo.close()
+    print("size of word_to_idx: %d" % len(word_to_idx))
     return word_to_idx
 
 def load_checkpoint(filename, model = None, g2c = False):
@@ -39,17 +41,14 @@ def load_checkpoint(filename, model = None, g2c = False):
     print("saved model: epoch = %d, loss = %f" % (checkpoint["epoch"], checkpoint["loss"]))
     return epoch
 
-def save_checkpoint(filename, model, epoch, loss, time):
-    log = "epoch = %d, loss = %f, time = %f" % (epoch, loss, time)
+def save_checkpoint(filename, model, epoch, loss):
     if filename and model:
-        print("saving model...")
         checkpoint = {}
         checkpoint["state_dict"] = model.state_dict()
         checkpoint["epoch"] = epoch
         checkpoint["loss"] = loss
-        torch.save(checkpoint, filename + ".epoch%d" % epoch)
-        log = "saved model: " + log
-    print(log)
+        torch.save(checkpoint, filename + ".epoch%02d" % epoch)
+        print("saved model: " + filename + ".epoch%02d" % epoch)
 
 def gpu2cpu(filename):
     checkpoint = torch.load(filename, map_location = lambda storage, loc: storage)
