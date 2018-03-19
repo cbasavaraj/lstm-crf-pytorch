@@ -60,6 +60,7 @@ class crf(nn.Module):
         self.num_tags = num_tags
 
         # matrix of transition scores to i from j
+        # TBD: from i to j! clearer in decode too
         self.trans = nn.Parameter(randn(num_tags, num_tags))
         self.trans.data[SOS_IDX, :] = -10000. # no transition to SOS
         self.trans.data[:, EOS_IDX] = -10000. # no transition from EOS except to PAD

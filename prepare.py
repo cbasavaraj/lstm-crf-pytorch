@@ -9,35 +9,6 @@ MAX_LENGTH = 50
 
 DATA_PATH = "./data/"
 
-def load_data(): # character-level
-    data = []
-    word_to_idx = {PAD: PAD_IDX, EOS: EOS_IDX}
-    tag_to_idx = {PAD: PAD_IDX, EOS: EOS_IDX, SOS: SOS_IDX}
-    fo = open(sys.argv[1])
-    for line in fo:
-        line = re.sub("\s+", " ", line)
-        line = re.sub("^ | $", "", line)
-        tokens = line.split(" ")
-        if len(tokens) < MIN_LENGTH or len(tokens) > MAX_LENGTH: # length constraints
-            continue
-        seq = []
-        tags = []
-        for tkn in tokens:
-            word = re.sub("/[A-Z]+", "", tkn)
-            tag = re.sub(".+/", "", tkn)
-            word = normalize(word)
-            for c in word:
-                if c not in word_to_idx:
-                    word_to_idx[c] = len(word_to_idx)
-            if tag not in tag_to_idx:
-                tag_to_idx[tag] = len(tag_to_idx)
-            seq.extend([word_to_idx[c] for c in list(word)])
-            tags.extend([tag_to_idx[tag]] * len(word))
-        data.append(seq + tags)
-    data.sort(key = len, reverse = True)
-    fo.close()
-    return data, word_to_idx, tag_to_idx
-
 def prepare_data(): # word-level
     word_to_idx = {PAD: PAD_IDX, EOS: EOS_IDX}
     tag_to_idx = {PAD: PAD_IDX, EOS: EOS_IDX, SOS: SOS_IDX}
